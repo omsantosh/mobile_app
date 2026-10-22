@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>SmartHome ESP32</title>
+
+  <!-- iOS Safari PWA / Add to Home Screen Support -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SmartHome">
+  <meta name="theme-color" content="#0d1117">
+  
+  <!-- Apple Touch Icon (House with Glowing Light) -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%2300897b'/%3E%3Cpath d='M90 32 L30 84 L46 84 L46 142 L76 142 L76 106 L104 106 L104 142 L134 142 L134 84 L150 84 Z' fill='%23ffffff'/%3E%3Ccircle cx='90' cy='76' r='12' fill='%23ffd54f'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2300897b'/%3E%3Cpath d='M50 20 L15 52 L25 52 L25 85 L42 85 L42 62 L58 62 L58 85 L75 85 L75 52 L85 52 Z' fill='%23fff'/%3E%3C/svg%3E">
+
+  <!-- Paho MQTT Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+
+  <style>
+    :root {
+      --primary: #00897b;
+      --primary-hover: #00796b;
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --card-inner: #21262d;
+      --card-border: #30363d;
+      --text: #f0f6fc;
+      --text-muted: #8b949e;
+      --green: #2ea043;
+      --red: #f85149;
+      --amber: #d29922;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
+    body { background-color: var(--bg); color: var(--text); padding: 16px; padding-bottom: 40px; max-width: 600px; margin: 0 auto; -webkit-font-smoothing: antialiased; }
+
+    /* Header */
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--card-border); }
+    .header h1 { font-size: 20px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+    .header p { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+
+    /* Badge */
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .badge.online { background: rgba(46, 160, 67, 0.2); color: #3fb950; border: 1px solid rgba(46, 160, 67, 0.4); }
+    .badge.offline { background: rgba(248, 81, 73, 0.2); color: #f85149; border: 1px solid rgba(248, 81, 73, 0.4); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .badge.online .dot { background: #3fb950; box-shadow: 0 0 8px #3fb950; }
+    .badge.offline .dot { background: #f85149; }
+
+    /* Cards */
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; color: #fff; }
+
+    /* Room Tabs */
+    .room-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 16px; scrollbar-width: none; }
+    .room-tabs::-webkit-scrollbar { display: none; }
+    .room-tab { background: var(--card-inner); border: 1px solid var(--card-border); color: var(--text-muted); padding: 8px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: all 0.2s; }
+    .room-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    /* Relay Grid */
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+    .relay-card { background: var(--card-inner); border: 1px solid var(--card-border); border-radius: 14px; padding: 14px; transition: all 0.2s ease; position: relative; }
+    .relay-card.active { border-color: var(--primary); background: rgba(0, 137, 123, 0.15); box-shadow: 0 0 16px rgba(0, 137, 123, 0.2); }
+    .relay-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .relay-title { font-weight: 600; font-size: 15px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90px; }
+    .rename-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
+
+    /* Modern Switch */
+    .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #484f58; transition: .25s; border-radius: 34px; }
+    .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .25s; border-radius: 50%; }
+    input:checked + .slider { background-color: var(--primary); }
+    input:checked + .slider:before { transform: translateX(20px); }
+
+    .relay-status-text { font-size: 12px; font-weight: 600; margin-bottom: 10px; }
+    .relay-card.active .relay-status-text { color: #3fb950; }
+    .relay-card:not(.active) .relay-status-text { color: var(--text-muted); }
+
+    /* Master Buttons */
+    .btn-row { display: flex; gap: 8px; margin-bottom: 16px; }
+    .btn { flex: 1; padding: 11px 14px; border-radius: 10px; border: none; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s; }
+    .btn.primary { background: var(--primary); color: white; }
+    .btn.primary:active { background: var(--primary-hover); transform: scale(0.98); }
+    .btn.danger { background: rgba(248, 81, 73, 0.2); color: #f85149; border: 1px solid rgba(248, 81, 73, 0.4); }
+    .btn.danger:active { background: rgba(248, 81, 73, 0.35); }
+    .btn.secondary { background: var(--card-inner); color: var(--text); border: 1px solid var(--card-border); }
+    .btn.secondary:active { background: #30363d; }
+    .btn.small { padding: 5px 10px; font-size: 11px; border-radius: 6px; }
+
+    /* Scenes */
+    .scenes-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .scene-btn { background: var(--card-inner); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px; text-align: left; cursor: pointer; color: #fff; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; transition: all 0.2s; }
+    .scene-btn:active { background: var(--primary); border-color: var(--primary); transform: scale(0.98); }
+
+    /* Telemetry */
+    .telemetry { display: flex; justify-content: space-around; background: var(--card-inner); border-radius: 10px; padding: 10px; font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+    .telemetry b { color: #fff; }
+
+    /* IR Learning List */
+    .ir-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .ir-item { background: var(--card-inner); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px; }
+    .ir-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+    .ir-code { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+
+    /* Collapsible */
+    details { border: 1px solid var(--card-border); border-radius: 12px; padding: 12px; background: var(--card-inner); margin-top: 12px; }
+    summary { font-weight: 600; font-size: 13px; cursor: pointer; color: var(--text-muted); }
+    details[open] summary { color: var(--text); margin-bottom: 10px; }
+    input[type="text"], select { width: 100%; background: #0d1117; border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; margin-top: 4px; margin-bottom: 10px; font-size: 13px; }
+    
+    /* Day selector */
+    .day-chips { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+    .day-chip { background: #30363d; border: 1px solid var(--card-border); color: #c9d1d9; padding: 4px 8px; border-radius: 12px; font-size: 11px; cursor: pointer; user-select: none; }
+    .day-chip.selected { background: var(--primary); color: white; border-color: var(--primary); }
+    .sched-row { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; font-size: 12px; }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div>
+      <h1>🏠 Smart Home</h1>
+      <p id="dispRoomSubtitle">Living Room Controller</p>
+    </div>
+    <div id="connectionBadge" class="badge offline">
+      <span class="dot"></span>
+      <span id="statusText">Connecting...</span>
+    </div>
+  </div>
+
+  <!-- TELEMETRY -->
+  <div class="telemetry">
+    <span>IP: <b id="dispIp">192.168.1.115</b></span>
+    <span>Wi-Fi: <b id="dispRssi">-58 dBm</b></span>
+    <span>Uptime: <b id="dispUptime">Active</b></span>
+  </div>
+
+  <!-- ROOM TABS -->
+  <div class="room-tabs" id="roomTabs">
+    <!-- Populated by JS -->
+  </div>
+
+  <!-- RELAY CONTROL GRID -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <h2>⚡ Relay Controls</h2>
+      <button class="rename-btn" onclick="renameCurrentRoom()" style="font-size: 13px; color: var(--primary);">✏️ Rename Room</button>
+    </div>
+
+    <!-- Master Buttons -->
+    <div class="btn-row">
+      <button class="btn primary" onclick="sendMasterCommand(1)">💡 All ON</button>
+      <button class="btn danger" onclick="sendMasterCommand(0)">🌑 All OFF</button>
+    </div>
+
+    <div class="grid" id="relayGrid">
+      <!-- Populated dynamically -->
+    </div>
+  </div>
+
+  <!-- SCENES -->
+  <div class="card">
+    <h2>✨ Quick Scenes</h2>
+    <div class="scenes-grid">
+      <div class="scene-btn" onclick="triggerScene('Morning', [1, 0, 1, 0])">☀️ Morning Mode</div>
+      <div class="scene-btn" onclick="triggerScene('Night', [0, 0, 0, 0])">🌙 Good Night</div>
+      <div class="scene-btn" onclick="triggerScene('Movie', [0, 1, 0, 0])">🎬 Movie Time</div>
+      <div class="scene-btn" onclick="triggerScene('Party', [1, 1, 1, 1])">🎉 All Lights ON</div>
+    </div>
+  </div>
+
+  <!-- UNIVERSAL IR REMOTE -->
+  <div class="card">
+    <h2>📡 IR Remote Learning (GPIO 23)</h2>
+    <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">
+      Point any remote at the ESP32. Click <b>Learn</b>, then press the remote button.
+    </p>
+
+    <div id="irAlert" style="display:none; padding: 10px; border-radius: 8px; margin-bottom: 10px; background: rgba(210, 153, 34, 0.15); border: 1px solid var(--amber); color: #ffd54f; font-size: 12px; font-weight: 600;">
+      🎯 Listening on GPIO 23... Press your remote button now!
+    </div>
+
+    <div class="ir-grid" id="irGrid">
+      <!-- Populated dynamically -->
+    </div>
+  </div>
+
+  <!-- SCHEDULES -->
+  <div class="card">
+    <h2>⏰ Autonomous Weekly Schedules</h2>
+    <div id="schedulesList">
+      <p style="color: var(--text-muted); font-size: 12px;">Loading schedules...</p>
+    </div>
+
+    <details>
+      <summary>➕ Add New Schedule</summary>
+      <div style="margin-top: 10px;">
+        <label>Select Channel:</label>
+        <select id="schedChannel">
+          <option value="1">Relay 1</option>
+          <option value="2">Relay 2</option>
+          <option value="3">Relay 3</option>
+          <option value="4">Relay 4</option>
+        </select>
+
+        <label>Action:</label>
+        <select id="schedAction">
+          <option value="1">Turn ON</option>
+          <option value="0">Turn OFF</option>
+          <option value="2">Toggle</option>
+        </select>
+
+        <label>Time (24h format):</label>
+        <input type="time" id="schedTime" value="06:30">
+
+        <label>Active Days:</label>
+        <div class="day-chips" id="dayChips">
+          <div class="day-chip selected" data-day="0">Sun</div>
+          <div class="day-chip selected" data-day="1">Mon</div>
+          <div class="day-chip selected" data-day="2">Tue</div>
+          <div class="day-chip selected" data-day="3">Wed</div>
+          <div class="day-chip selected" data-day="4">Thu</div>
+          <div class="day-chip selected" data-day="5">Fri</div>
+          <div class="day-chip selected" data-day="6">Sat</div>
+        </div>
+
+        <button class="btn primary small" style="width: 100%;" onclick="addSchedule()">Save Schedule to ESP32</button>
+      </div>
+    </details>
+  </div>
+
+  <!-- NETWORK SETTINGS -->
+  <details class="card">
+    <summary>⚙️ Device & Broker Settings</summary>
+    <div style="margin-top: 10px;">
+      <label>ESP32 Device ID:</label>
+      <input type="text" id="deviceIdInput" value="SmartESP32_977590">
+
+      <label>MQTT Cloud Broker:</label>
+      <input type="text" id="mqttBroker" value="broker.hivemq.com">
+
+      <button class="btn secondary small" style="width:100%;" onclick="reconnectMQTT()">Save & Reconnect</button>
+    </div>
+  </details>
+
+  <script>
+    // Configuration & State
+    let rooms = JSON.parse(localStorage.getItem('smart_rooms')) || [
+      { id: 'room_1', name: 'Living Room', deviceId: 'SmartESP32_977590' },
+      { id: 'room_2', name: 'Master Bed', deviceId: 'SmartESP32_977590' },
+      { id: 'room_3', name: 'Kitchen', deviceId: 'SmartESP32_977590' }
+    ];
+    let currentRoomIndex = 0;
+    let currentDeviceId = localStorage.getItem('esp32_device_id') || 'SmartESP32_977590';
+    let mqttClient = null;
+    let relayStates = [1, 1, 1, 1];
+    let relayNames = ['Light 1', 'Fan', 'AC / Heater', 'Night Lamp'];
+    let schedules = [
+      { channel: 1, action: 1, hour: 6, min: 30, days: 127, enabled: true },
+      { channel: 1, action: 0, hour: 23, min: 0, days: 127, enabled: true }
+    ];
+
+    // Day chips toggle
+    document.addEventListener('click', (e) => {
+      if (e.target.classList.contains('day-chip')) {
+        e.target.classList.toggle('selected');
+      }
+    });
+
+    // Render Room Tabs
+    function renderRoomTabs() {
+      const container = document.getElementById('roomTabs');
+      container.innerHTML = '';
+      rooms.forEach((r, idx) => {
+        const tab = document.createElement('div');
+        tab.className = `room-tab ${idx === currentRoomIndex ? 'active' : ''}`;
+        tab.innerText = r.name;
+        tab.onclick = () => {
+          currentRoomIndex = idx;
+          currentDeviceId = r.deviceId;
+          document.getElementById('deviceIdInput').value = currentDeviceId;
+          document.getElementById('dispRoomSubtitle').innerText = `${r.name} Controller`;
+          renderRoomTabs();
+          reconnectMQTT();
+        };
+        container.appendChild(tab);
+      });
+    }
+
+    function renameCurrentRoom() {
+      const current = rooms[currentRoomIndex].name;
+      const newName = prompt('Enter new room name:', current);
+      if (newName && newName.trim() !== '') {
+        rooms[currentRoomIndex].name = newName.trim();
+        localStorage.setItem('smart_rooms', JSON.stringify(rooms));
+        document.getElementById('dispRoomSubtitle').innerText = `${newName.trim()} Controller`;
+        renderRoomTabs();
+        if (mqttClient && mqttClient.isConnected()) {
+          const msg = new Paho.MQTT.Message(JSON.stringify({ room: newName.trim() }));
+          msg.destinationName = `home/${currentDeviceId}/config/set`;
+          mqttClient.send(msg);
+        }
+      }
+    }
+
+    function editRelayName(ch) {
+      const current = relayNames[ch - 1] || `Relay ${ch}`;
+      const newName = prompt(`Enter new name for Relay ${ch}:`, current);
+      if (newName && newName.trim() !== '') {
+        relayNames[ch - 1] = newName.trim();
+        renderRelays();
+        if (mqttClient && mqttClient.isConnected()) {
+          const msg = new Paho.MQTT.Message(JSON.stringify({ channel: ch, name: newName.trim() }));
+          msg.destinationName = `home/${currentDeviceId}/config/set`;
+          mqttClient.send(msg);
+        }
+      }
+    }
+
+    // Render Relays
+    function renderRelays() {
+      const grid = document.getElementById('relayGrid');
+      grid.innerHTML = '';
+      for (let i = 0; i < relayStates.length; i++) {
+        const ch = i + 1;
+        const active = (relayStates[i] === 1);
+        const name = relayNames[i] || `Relay ${ch}`;
+
+        const card = document.createElement('div');
+        card.className = `relay-card ${active ? 'active' : ''}`;
+        card.id = `relayCard_${ch}`;
+        card.innerHTML = `
+          <div class="relay-header">
+            <span class="relay-title" title="${name}">${name}</span>
+            <label class="switch">
+              <input type="checkbox" id="switch_${ch}" ${active ? 'checked' : ''} onchange="toggleRelay(${ch}, this.checked)">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="relay-status-text" id="statusLabel_${ch}">
+            ${active ? '● ON' : '○ OFF'}
+            <button class="rename-btn" onclick="editRelayName(${ch})" title="Rename">✏️</button>
+          </div>
+          <div style="display: flex; gap: 4px; margin-top: 4px;">
+            <select id="timer_${ch}" style="padding: 2px 4px; font-size: 11px; margin: 0; width: 65%;">
+              <option value="300">5 min</option>
+              <option value="900" selected>15 min</option>
+              <option value="1800">30 min</option>
+              <option value="3600">1 hr</option>
+            </select>
+            <button class="btn secondary small" style="width: 35%; padding: 4px;" onclick="startTimer(${ch})">⏱️ Auto</button>
+          </div>
+        `;
+        grid.appendChild(card);
+      }
+    }
+
+    // Render IR Grid
+    function renderIrGrid() {
+      const grid = document.getElementById('irGrid');
+      grid.innerHTML = '';
+      const items = [
+        { id: 0, title: 'Relay 1' },
+        { id: 1, title: 'Relay 2' },
+        { id: 2, title: 'Relay 3' },
+        { id: 3, title: 'Relay 4' },
+        { id: 10, title: 'All ON' },
+        { id: 11, title: 'All OFF' }
+      ];
+
+      items.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'ir-item';
+        div.innerHTML = `
+          <div class="ir-item-header">
+            <span>${item.title}</span>
+            <button class="rename-btn" onclick="clearIrKey(${item.id})">❌</button>
+          </div>
+          <div class="ir-code" id="irCode_${item.id}">Code: Not Paired</div>
+          <button class="btn primary small" style="width:100%;" onclick="startIrLearn(${item.id})">🎯 Learn Key</button>
+        `;
+        grid.appendChild(div);
+      });
+    }
+
+    // Render Schedules
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    function renderSchedules() {
+      const container = document.getElementById('schedulesList');
+      if (schedules.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted); font-size: 12px;">No active schedules.</p>';
+        return;
+      }
+      container.innerHTML = '';
+      schedules.forEach((s, idx) => {
+        const timeStr = `${String(s.hour).padStart(2, '0')}:${String(s.min).padStart(2, '0')}`;
+        const actStr = s.action === 1 ? 'ON' : (s.action === 0 ? 'OFF' : 'TOGGLE');
+        let daysStr = (s.days === 127) ? 'Every day' : dayNames.filter((_, i) => (s.days & (1 << i)) !== 0).join(', ');
+
+        const row = document.createElement('div');
+        row.className = 'sched-row';
+        row.innerHTML = `
+          <div>
+            <b style="color:var(--primary); font-size:14px;">${timeStr}</b>
+            <span style="margin-left:6px; font-weight:600;">Relay ${s.channel} (${actStr})</span>
+            <div style="color:var(--text-muted); font-size:11px;">${daysStr}</div>
+          </div>
+          <button class="btn danger small" onclick="deleteSchedule(${idx})">🗑️</button>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function addSchedule() {
+      const ch = parseInt(document.getElementById('schedChannel').value);
+      const act = parseInt(document.getElementById('schedAction').value);
+      const timeVal = document.getElementById('schedTime').value.trim();
+      if (!timeVal) return;
+      const parts = timeVal.split(':');
+      const hr = parseInt(parts[0]);
+      const mn = parseInt(parts[1]);
+
+      let daysBitmask = 0;
+      document.querySelectorAll('#dayChips .day-chip.selected').forEach(c => {
+        daysBitmask |= (1 << parseInt(c.dataset.day));
+      });
+      if (daysBitmask === 0) daysBitmask = 127;
+
+      schedules.push({ channel: ch, action: act, hour: hr, min: mn, days: daysBitmask, enabled: true });
+      renderSchedules();
+      syncSchedulesToESP32();
+    }
+
+    function deleteSchedule(idx) {
+      schedules.splice(idx, 1);
+      renderSchedules();
+      syncSchedulesToESP32();
+    }
+
+    // MQTT Logic (Automatic SSL detection for HTTPS / GitHub Pages)
+    function connectMQTT() {
+      currentDeviceId = document.getElementById('deviceIdInput').value.trim() || currentDeviceId;
+      localStorage.setItem('esp32_device_id', currentDeviceId);
+
+      const isHttps = (window.location.protocol === 'https:');
+      const brokerHost = document.getElementById('mqttBroker').value.trim() || 'broker.hivemq.com';
+      const brokerPort = isHttps ? 8884 : 8000;
+      const clientId = 'WebClient_' + Math.floor(Math.random() * 1000000);
+
+      document.getElementById('connectionBadge').className = 'badge offline';
+      document.getElementById('statusText').innerText = 'Connecting...';
+
+      mqttClient = new Paho.MQTT.Client(brokerHost, brokerPort, clientId);
+
+      mqttClient.onConnectionLost = (resp) => {
+        document.getElementById('connectionBadge').className = 'badge offline';
+        document.getElementById('statusText').innerText = 'Offline';
+        // Auto-reconnect after 3 seconds
+        setTimeout(connectMQTT, 3000);
+      };
+
+      mqttClient.onMessageArrived = (msg) => {
+        const topic = msg.destinationName;
+        const payload = msg.payloadString;
+
+        if (topic.endsWith('/status')) {
+          const isOnline = (payload.trim().toLowerCase() === 'online');
+          document.getElementById('connectionBadge').className = `badge ${isOnline ? 'online' : 'offline'}`;
+          document.getElementById('statusText').innerText = isOnline ? 'Online' : 'Offline';
+        }
+        else if (topic.endsWith('/state')) {
+          try {
+            const data = JSON.parse(payload);
+            if (data.relays) {
+              relayStates = data.relays;
+              renderRelays();
+            }
+            if (data.names && data.names.length > 0) {
+              relayNames = data.names;
+              renderRelays();
+            }
+            if (data.ip) document.getElementById('dispIp').innerText = data.ip;
+            if (data.wifi_rssi) document.getElementById('dispRssi').innerText = data.wifi_rssi + ' dBm';
+            if (data.uptime_sec) {
+              const h = Math.floor(data.uptime_sec / 3600);
+              const m = Math.floor((data.uptime_sec % 3600) / 60);
+              document.getElementById('dispUptime').innerText = `${h}h ${m}m`;
+            }
+          } catch(e) {}
+        }
+        else if (topic.endsWith('/ir/status')) {
+          try {
+            const data = JSON.parse(payload);
+            if (data.event === 'learned') {
+              document.getElementById('irAlert').style.display = 'none';
+              const el = document.getElementById(`irCode_${data.target}`);
+              if (el) el.innerHTML = `Code: <b style="color:#3fb950">${data.code}</b>`;
+              alert(`✅ Learned IR Button for ${data.action}!`);
+            }
+          } catch(e) {}
+        }
+      };
+
+      mqttClient.connect({
+        useSSL: isHttps,
+        timeout: 10,
+        keepAliveInterval: 30,
+        cleanSession: true,
+        onSuccess: () => {
+          document.getElementById('connectionBadge').className = 'badge online';
+          document.getElementById('statusText').innerText = 'Online';
+          mqttClient.subscribe(`home/${currentDeviceId}/status`);
+          mqttClient.subscribe(`home/${currentDeviceId}/state`);
+          mqttClient.subscribe(`home/${currentDeviceId}/ir/status`);
+        },
+        onFailure: (err) => {
+          document.getElementById('connectionBadge').className = 'badge offline';
+          document.getElementById('statusText').innerText = 'Retry...';
+          setTimeout(connectMQTT, 4000);
+        }
+      });
+    }
+
+    function reconnectMQTT() {
+      if (mqttClient) {
+        try { mqttClient.disconnect(); } catch(e) {}
+      }
+      connectMQTT();
+    }
+
+    function toggleRelay(ch, isChecked) {
+      if (!mqttClient || !mqttClient.isConnected()) return;
+      const msg = new Paho.MQTT.Message(JSON.stringify({ channel: ch, state: isChecked ? 1 : 0 }));
+      msg.destinationName = `home/${currentDeviceId}/set`;
+      mqttClient.send(msg);
+    }
+
+    function sendMasterCommand(state) {
+      if (!mqttClient || !mqttClient.isConnected()) return;
+      const msg = new Paho.MQTT.Message(JSON.stringify({ all: state }));
+      msg.destinationName = `home/${currentDeviceId}/set`;
+      mqttClient.send(msg);
+    }
+
+    function triggerScene(name, states) {
+      if (!mqttClient || !mqttClient.isConnected()) return;
+      const actions = states.map((s, idx) => ({ channel: idx + 1, state: s }));
+      const msg = new Paho.MQTT.Message(JSON.stringify({ name: name, actions: actions }));
+      msg.destinationName = `home/${currentDeviceId}/scene`;
+      mqttClient.send(msg);
+    }
+
+    function startTimer(ch) {
+      if (!mqttClient || !mqttClient.isConnected()) return;
+      const sec = parseInt(document.getElementById(`timer_${ch}`).value);
+      const msg = new Paho.MQTT.Message(JSON.stringify({ channel: ch, seconds: sec, state: 0 }));
+      msg.destinationName = `home/${currentDeviceId}/timer`;
+      mqttClient.send(msg);
+      alert(`⏱️ Relay ${ch} will automatically turn OFF in ${sec / 60} minutes!`);
+    }
+
+    function syncSchedulesToESP32() {
+      if (!mqttClient || !mqttClient.isConnected()) return;
+      const msg = new Paho.MQTT.Message(JSON.stringify({ schedules: schedules }));
+      msg.destinationName = `home/${currentDeviceId}/schedules/set`;
+      msg.retained = true;
+      mqttClient.send(msg);
+    }
+
+    function startIrLearn(target) {
+      if (!mqttClient || !mqttClient.isConnected()) return;
+      document.getElementById('irAlert').style.display = 'block';
+      const msg = new Paho.MQTT.Message(JSON.stringify({ target: target }));
+      msg.destinationName = `home/${currentDeviceId}/ir/learn`;
+      mqttClient.send(msg);
+      setTimeout(() => {
+        document.getElementById('irAlert').style.display = 'none';
+      }, 15000);
+    }
+
+    function clearIrKey(target) {
+      if (!mqttClient || !mqttClient.isConnected()) return;
+      const msg = new Paho.MQTT.Message(JSON.stringify({ target: target }));
+      msg.destinationName = `home/${currentDeviceId}/ir/clear`;
+      mqttClient.send(msg);
+      const el = document.getElementById(`irCode_${target}`);
+      if (el) el.innerText = 'Code: Not Paired';
+    }
+
+    // Initialize UI & Connect
+    renderRoomTabs();
+    renderRelays();
+    renderIrGrid();
+    renderSchedules();
+    setTimeout(connectMQTT, 400);
+  </script>
+</body>
+</html>
