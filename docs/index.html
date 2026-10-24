@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>SmartHome ESP32</title>
+  <title>ThaleSmart</title>
 
   <!-- iOS Safari PWA / Add to Home Screen Support -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="SmartHome">
+  <meta name="apple-mobile-web-app-title" content="ThaleSmart">
   <meta name="theme-color" content="#0d1117">
   
   <!-- Apple Touch Icon (House with Glowing Light) -->
-  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%2300897b'/%3E%3Cpath d='M90 32 L30 84 L46 84 L46 142 L76 142 L76 106 L104 106 L104 142 L134 142 L134 84 L150 84 Z' fill='%23ffffff'/%3E%3Ccircle cx='90' cy='76' r='12' fill='%23ffd54f'/%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2300897b'/%3E%3Cpath d='M50 20 L15 52 L25 52 L25 85 L42 85 L42 62 L58 62 L58 85 L75 85 L75 52 L85 52 Z' fill='%23fff'/%3E%3C/svg%3E">
 
   <!-- Paho MQTT Library -->
@@ -238,7 +238,7 @@
     <summary>⚙️ Device & Broker Settings</summary>
     <div style="margin-top: 10px;">
       <label>ESP32 Device ID:</label>
-      <input type="text" id="deviceIdInput" value="SmartESP32_977590">
+      <input type="text" id="deviceIdInput" value="ThaleSmart_E4B1F0">
 
       <label>MQTT Cloud Broker:</label>
       <input type="text" id="mqttBroker" value="broker.hivemq.com">
@@ -250,12 +250,12 @@
   <script>
     // Configuration & State
     let rooms = JSON.parse(localStorage.getItem('smart_rooms')) || [
-      { id: 'room_1', name: 'Living Room', deviceId: 'SmartESP32_977590' },
-      { id: 'room_2', name: 'Master Bed', deviceId: 'SmartESP32_977590' },
-      { id: 'room_3', name: 'Kitchen', deviceId: 'SmartESP32_977590' }
+      { id: 'room_1', name: 'Living Room', deviceId: 'ThaleSmart_E4B1F0' },
+      { id: 'room_2', name: 'Master Bed', deviceId: 'ThaleSmart_E4B1F0' },
+      { id: 'room_3', name: 'Kitchen', deviceId: 'ThaleSmart_E4B1F0' }
     ];
     let currentRoomIndex = 0;
-    let currentDeviceId = localStorage.getItem('esp32_device_id') || 'SmartESP32_977590';
+    let currentDeviceId = localStorage.getItem('esp32_device_id') || 'ThaleSmart_E4B1F0';
     let mqttClient = null;
     let relayStates = [1, 1, 1, 1];
     let relayNames = ['Light 1', 'Fan', 'AC / Heater', 'Night Lamp'];

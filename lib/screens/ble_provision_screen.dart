@@ -113,7 +113,7 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
                     controller: _deviceIdController,
                     decoration: InputDecoration(
                       labelText: 'Device ID (from Serial Monitor)',
-                      hintText: 'e.g. SmartESP32_977590',
+                      hintText: 'e.g. ThaleSmart_E4B1F0',
                       prefixIcon: const Icon(Icons.developer_board, color: Colors.teal),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                       focusedBorder: OutlineInputBorder(
@@ -331,7 +331,7 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
                 ...ble.scanResults.map((result) {
                   final name = result.device.platformName.isNotEmpty
                       ? result.device.platformName
-                      : 'SmartESP32 Device';
+                      : 'ThaleSmart Device';
                   return ListTile(
                     leading: const Icon(Icons.developer_board, color: Colors.teal),
                     title: Text(name),

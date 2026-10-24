@@ -16,18 +16,18 @@ void main() {
         ChangeNotifierProvider(create: (_) => MqttService()),
         ChangeNotifierProvider(create: (_) => BleService()),
       ],
-      child: const SmartHomeApp(),
+      child: const ThaleSmartApp(),
     ),
   );
 }
 
-class SmartHomeApp extends StatelessWidget {
-  const SmartHomeApp({Key? key}) : super(key: key);
+class ThaleSmartApp extends StatelessWidget {
+  const ThaleSmartApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ESP32 Smart Home',
+      title: 'ThaleSmart',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

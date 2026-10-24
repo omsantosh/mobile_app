@@ -14,7 +14,7 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   List<Map<String, String>> _rooms = [
-    {'name': 'Living Room', 'deviceId': 'SmartESP32_977590'},
+    {'name': 'Living Room', 'deviceId': 'ThaleSmart_E4B1F0'},
   ];
   int _selectedRoomIndex = 0;
 
@@ -27,7 +27,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _loadRooms() async {
     final prefs = await SharedPreferences.getInstance();
     final roomsJson = prefs.getString('saved_rooms');
-    final activeId = prefs.getString('device_id') ?? 'SmartESP32_977590';
+    final activeId = prefs.getString('device_id') ?? 'ThaleSmart_E4B1F0';
 
     if (roomsJson != null) {
       try {
@@ -331,7 +331,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Smart Home Dashboard', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('ThaleSmart', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_remote_outlined),
