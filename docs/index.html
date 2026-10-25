@@ -16,8 +16,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2300897b'/%3E%3Cpath d='M50 20 L15 52 L25 52 L25 85 L42 85 L42 62 L58 62 L58 85 L75 85 L75 52 L85 52 Z' fill='%23fff'/%3E%3C/svg%3E">
 
-  <!-- Paho MQTT Library -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+  <!-- Paho MQTT Library (Modern v1.1.0 for iOS Safari & Android) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.1.0/paho-mqtt.min.js"></script>
 
   <style>
     :root {
@@ -316,9 +316,8 @@
         document.getElementById('dispRoomSubtitle').innerText = `${newName.trim()} Controller`;
         renderRoomTabs();
         if (mqttClient && mqttClient.isConnected()) {
-          const msg = new Paho.MQTT.Message(JSON.stringify({ room: newName.trim() }));
-          msg.destinationName = `home/${currentDeviceId}/config/set`;
-          mqttClient.send(msg);
+          const msg = makeMqttMessage(JSON.stringify({ room: newName.trim() }), `home/${currentDeviceId}/config/set`);
+          if (msg) mqttClient.send(msg);
         }
       }
     }
@@ -330,9 +329,8 @@
         relayNames[ch - 1] = newName.trim();
         renderRelays();
         if (mqttClient && mqttClient.isConnected()) {
-          const msg = new Paho.MQTT.Message(JSON.stringify({ channel: ch, name: newName.trim() }));
-          msg.destinationName = `home/${currentDeviceId}/config/set`;
-          mqttClient.send(msg);
+          const msg = makeMqttMessage(JSON.stringify({ channel: ch, name: newName.trim() }), `home/${currentDeviceId}/config/set`);
+          if (msg) mqttClient.send(msg);
         }
       }
     }
@@ -457,8 +455,46 @@
       syncSchedulesToESP32();
     }
 
+    // Paho Constructor compatibility helpers
+    function getPahoClientCtor() {
+      return (window.Paho && (Paho.Client || Paho.MQTT?.Client));
+    }
+    function makeMqttMessage(payloadStr, topic, retained = false) {
+      const MsgCtor = (window.Paho && (Paho.Message || Paho.MQTT?.Message));
+      if (!MsgCtor) return null;
+      const msg = new MsgCtor(payloadStr);
+      msg.destinationName = topic;
+      if (retained) msg.retained = true;
+      return msg;
+    }
+
+    let reconnectTimer = null;
+    function cancelReconnectTimer() {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    }
+    function scheduleReconnect(delayMs) {
+      cancelReconnectTimer();
+      reconnectTimer = setTimeout(connectMQTT, delayMs || 6000);
+    }
+    function disconnectCurrentClient() {
+      if (mqttClient) {
+        try {
+          mqttClient.onConnectionLost = null;
+          mqttClient.onMessageArrived = null;
+          if (typeof mqttClient.isConnected === 'function' && mqttClient.isConnected()) {
+            mqttClient.disconnect();
+          }
+        } catch(e) {}
+        mqttClient = null;
+      }
+    }
+
     // MQTT Logic (Automatic SSL detection and fallback for HTTPS / GitHub Pages / local file)
     function connectMQTT() {
+      cancelReconnectTimer();
       currentDeviceId = document.getElementById('deviceIdInput').value.trim() || currentDeviceId;
       localStorage.setItem('esp32_device_id', currentDeviceId);
 
@@ -469,30 +505,42 @@
       document.getElementById('statusText').innerText = 'Connecting...';
 
       // Always try secure WSS port 8884 first
-      _tryConnectWithPort(brokerHost, 8884, true, clientId, () => {
+      _tryConnectWithPort(brokerHost, 8884, true, clientId, (errReason) => {
         // If 8884 fails on local file or HTTP, try WS port 8000
         if (window.location.protocol !== 'https:') {
           console.warn('WSS 8884 failed, attempting WS port 8000 fallback...');
-          _tryConnectWithPort(brokerHost, 8000, false, clientId + '_ws');
+          _tryConnectWithPort(brokerHost, 8000, false, clientId + '_ws', (err2) => {
+            document.getElementById('connectionBadge').className = 'badge offline';
+            document.getElementById('statusText').innerText = 'Retry: ' + (err2 || 'Error');
+            scheduleReconnect(6000);
+          });
         } else {
           document.getElementById('connectionBadge').className = 'badge offline';
-          document.getElementById('statusText').innerText = 'Retry...';
-          setTimeout(connectMQTT, 5000);
+          document.getElementById('statusText').innerText = 'Retry (' + (errReason || 'timeout') + ')';
+          scheduleReconnect(6000);
         }
       });
     }
 
     function _tryConnectWithPort(brokerHost, brokerPort, useSSL, clientId, onFailCallback) {
-      if (mqttClient) {
-        try { mqttClient.disconnect(); } catch(e) {}
+      disconnectCurrentClient();
+
+      const ClientCtor = getPahoClientCtor();
+      if (!ClientCtor) {
+        console.error('MQTT Library not ready');
+        document.getElementById('statusText').innerText = 'Lib Error';
+        scheduleReconnect(3000);
+        return;
       }
 
-      mqttClient = new Paho.MQTT.Client(brokerHost, brokerPort, clientId);
+      // Explicit 4 arguments: (host, port, path, clientId)
+      mqttClient = new ClientCtor(brokerHost, Number(brokerPort), "/mqtt", clientId);
 
       mqttClient.onConnectionLost = (resp) => {
+        console.warn('MQTT connection lost:', resp);
         document.getElementById('connectionBadge').className = 'badge offline';
         document.getElementById('statusText').innerText = 'Offline (Tap)';
-        setTimeout(connectMQTT, 5000);
+        scheduleReconnect(6000);
       };
 
       mqttClient.onMessageArrived = (msg) => {
@@ -541,10 +589,12 @@
 
       mqttClient.connect({
         useSSL: useSSL,
-        timeout: 5,
+        timeout: 15,
+        mqttVersion: 4,
         keepAliveInterval: 30,
         cleanSession: true,
         onSuccess: () => {
+          cancelReconnectTimer();
           document.getElementById('connectionBadge').className = 'badge online';
           document.getElementById('statusText').innerText = 'Online';
           mqttClient.subscribe(`home/${currentDeviceId}/status`);
@@ -552,70 +602,73 @@
           mqttClient.subscribe(`home/${currentDeviceId}/ir/status`);
         },
         onFailure: (err) => {
+          const reason = err ? (err.errorMessage || err.errorCode || 'Timeout') : 'Timeout';
           console.warn(`MQTT connection failed on port ${brokerPort}:`, err);
           if (onFailCallback) {
-            onFailCallback();
+            onFailCallback(reason);
           } else {
             document.getElementById('connectionBadge').className = 'badge offline';
-            document.getElementById('statusText').innerText = 'Retry...';
-            setTimeout(connectMQTT, 5000);
+            document.getElementById('statusText').innerText = 'Retry (' + reason + ')';
+            scheduleReconnect(6000);
           }
         }
       });
     }
 
-    function reconnectMQTT() {
-      if (mqttClient) {
-        try { mqttClient.disconnect(); } catch(e) {}
+    // Auto-reconnect when user returns to Safari tab on iOS
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        if (!mqttClient || !mqttClient.isConnected()) {
+          console.log('App returned to foreground, reconnecting MQTT...');
+          reconnectMQTT();
+        }
       }
+    });
+
+    function reconnectMQTT() {
+      cancelReconnectTimer();
+      disconnectCurrentClient();
       connectMQTT();
     }
 
     function toggleRelay(ch, isChecked) {
       if (!mqttClient || !mqttClient.isConnected()) return;
-      const msg = new Paho.MQTT.Message(JSON.stringify({ channel: ch, state: isChecked ? 1 : 0 }));
-      msg.destinationName = `home/${currentDeviceId}/set`;
-      mqttClient.send(msg);
+      const msg = makeMqttMessage(JSON.stringify({ channel: ch, state: isChecked ? 1 : 0 }), `home/${currentDeviceId}/set`);
+      if (msg) mqttClient.send(msg);
     }
 
     function sendMasterCommand(state) {
       if (!mqttClient || !mqttClient.isConnected()) return;
-      const msg = new Paho.MQTT.Message(JSON.stringify({ all: state }));
-      msg.destinationName = `home/${currentDeviceId}/set`;
-      mqttClient.send(msg);
+      const msg = makeMqttMessage(JSON.stringify({ all: state }), `home/${currentDeviceId}/set`);
+      if (msg) mqttClient.send(msg);
     }
 
     function triggerScene(name, states) {
       if (!mqttClient || !mqttClient.isConnected()) return;
       const actions = states.map((s, idx) => ({ channel: idx + 1, state: s }));
-      const msg = new Paho.MQTT.Message(JSON.stringify({ name: name, actions: actions }));
-      msg.destinationName = `home/${currentDeviceId}/scene`;
-      mqttClient.send(msg);
+      const msg = makeMqttMessage(JSON.stringify({ name: name, actions: actions }), `home/${currentDeviceId}/scene`);
+      if (msg) mqttClient.send(msg);
     }
 
     function startTimer(ch) {
       if (!mqttClient || !mqttClient.isConnected()) return;
       const sec = parseInt(document.getElementById(`timer_${ch}`).value);
-      const msg = new Paho.MQTT.Message(JSON.stringify({ channel: ch, seconds: sec, state: 0 }));
-      msg.destinationName = `home/${currentDeviceId}/timer`;
-      mqttClient.send(msg);
+      const msg = makeMqttMessage(JSON.stringify({ channel: ch, seconds: sec, state: 0 }), `home/${currentDeviceId}/timer`);
+      if (msg) mqttClient.send(msg);
       alert(`⏱️ Relay ${ch} will automatically turn OFF in ${sec / 60} minutes!`);
     }
 
     function syncSchedulesToESP32() {
       if (!mqttClient || !mqttClient.isConnected()) return;
-      const msg = new Paho.MQTT.Message(JSON.stringify({ schedules: schedules }));
-      msg.destinationName = `home/${currentDeviceId}/schedules/set`;
-      msg.retained = true;
-      mqttClient.send(msg);
+      const msg = makeMqttMessage(JSON.stringify({ schedules: schedules }), `home/${currentDeviceId}/schedules/set`, true);
+      if (msg) mqttClient.send(msg);
     }
 
     function startIrLearn(target) {
       if (!mqttClient || !mqttClient.isConnected()) return;
       document.getElementById('irAlert').style.display = 'block';
-      const msg = new Paho.MQTT.Message(JSON.stringify({ target: target }));
-      msg.destinationName = `home/${currentDeviceId}/ir/learn`;
-      mqttClient.send(msg);
+      const msg = makeMqttMessage(JSON.stringify({ target: target }), `home/${currentDeviceId}/ir/learn`);
+      if (msg) mqttClient.send(msg);
       setTimeout(() => {
         document.getElementById('irAlert').style.display = 'none';
       }, 15000);
@@ -623,9 +676,8 @@
 
     function clearIrKey(target) {
       if (!mqttClient || !mqttClient.isConnected()) return;
-      const msg = new Paho.MQTT.Message(JSON.stringify({ target: target }));
-      msg.destinationName = `home/${currentDeviceId}/ir/clear`;
-      mqttClient.send(msg);
+      const msg = makeMqttMessage(JSON.stringify({ target: target }), `home/${currentDeviceId}/ir/clear`);
+      if (msg) mqttClient.send(msg);
       const el = document.getElementById(`irCode_${target}`);
       if (el) el.innerText = 'Code: Not Paired';
     }
