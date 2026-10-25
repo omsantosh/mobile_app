@@ -1,37 +1,55 @@
-name: Build iOS IPA
+name: Build ThaleSmart iOS IPA
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'lib/**'
+      - 'ios/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/build_ios.yml'
 
 jobs:
   build-ios:
+    name: Compile & Package iOS IPA
     runs-on: macos-14
+    timeout-minutes: 45
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Flutter
+      - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
 
-      - name: Install Dependencies
-        run: flutter pub get
+      - name: Verify Flutter & Xcode Environment
+        run: |
+          flutter --version
+          xcodebuild -version
 
-      - name: Build iOS Application
-        run: flutter build ios --release --no-codesign
+      - name: Install Flutter Dependencies
+        run: |
+          flutter pub get
 
-      - name: Package Payload into IPA
+      - name: Build iOS Application (Release Mode, Unsigned)
+        run: |
+          flutter build ios --release --no-codesign
+
+      - name: Package Payload into ThaleSmart.ipa
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r SmartHome_unsigned.ipa Payload
-          rm -rf Payload
+          zip -r -q ThaleSmart.ipa Payload
+          echo "IPA Size:"
+          ls -lh ThaleSmart.ipa
 
-      - name: Upload IPA Artifact
+      - name: Upload ThaleSmart IPA to GitHub
         uses: actions/upload-artifact@v4
         with:
-          name: SmartHome-iOS-App
-          path: SmartHome_unsigned.ipa
+          name: ThaleSmart-iOS-IPA
+          path: ThaleSmart.ipa
+          retention-days: 30
