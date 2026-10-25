@@ -123,10 +123,10 @@
   <!-- HEADER -->
   <div class="header">
     <div>
-      <h1>🏠 Smart Home</h1>
+      <h1>🏠 ThaleSmart</h1>
       <p id="dispRoomSubtitle">Living Room Controller</p>
     </div>
-    <div id="connectionBadge" class="badge offline">
+    <div id="connectionBadge" class="badge offline" onclick="reconnectMQTT()" style="cursor: pointer;" title="Click to reconnect">
       <span class="dot"></span>
       <span id="statusText">Connecting...</span>
     </div>
@@ -177,7 +177,7 @@
   <div class="card">
     <h2>📡 IR Remote Learning (GPIO 23)</h2>
     <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">
-      Point any remote at the ESP32. Click <b>Learn</b>, then press the remote button.
+      Point any remote at ThaleSmart. Click <b>Learn</b>, then press the remote button.
     </p>
 
     <div id="irAlert" style="display:none; padding: 10px; border-radius: 8px; margin-bottom: 10px; background: rgba(210, 153, 34, 0.15); border: 1px solid var(--amber); color: #ffd54f; font-size: 12px; font-weight: 600;">
@@ -228,7 +228,7 @@
           <div class="day-chip selected" data-day="6">Sat</div>
         </div>
 
-        <button class="btn primary small" style="width: 100%;" onclick="addSchedule()">Save Schedule to ESP32</button>
+        <button class="btn primary small" style="width: 100%;" onclick="addSchedule()">Save Schedule to ThaleSmart</button>
       </div>
     </details>
   </div>
@@ -237,7 +237,7 @@
   <details class="card">
     <summary>⚙️ Device & Broker Settings</summary>
     <div style="margin-top: 10px;">
-      <label>ESP32 Device ID:</label>
+      <label>ThaleSmart Device ID:</label>
       <input type="text" id="deviceIdInput" value="ThaleSmart_E4B1F0">
 
       <label>MQTT Cloud Broker:</label>
@@ -248,17 +248,32 @@
   </details>
 
   <script>
-    // Configuration & State
-    let rooms = JSON.parse(localStorage.getItem('smart_rooms')) || [
+    // Configuration & State with auto-migration from legacy SmartESP
+    let storedRooms = null;
+    try { storedRooms = JSON.parse(localStorage.getItem('smart_rooms')); } catch(e) {}
+    let rooms = storedRooms || [
       { id: 'room_1', name: 'Living Room', deviceId: 'ThaleSmart_E4B1F0' },
       { id: 'room_2', name: 'Master Bed', deviceId: 'ThaleSmart_E4B1F0' },
       { id: 'room_3', name: 'Kitchen', deviceId: 'ThaleSmart_E4B1F0' }
     ];
+    // Automatically update any old SmartESP references in rooms
+    rooms = rooms.map(r => {
+      if (r.deviceId && r.deviceId.startsWith('SmartESP')) {
+        r.deviceId = 'ThaleSmart_E4B1F0';
+      }
+      return r;
+    });
+    localStorage.setItem('smart_rooms', JSON.stringify(rooms));
+
     let currentRoomIndex = 0;
     let currentDeviceId = localStorage.getItem('esp32_device_id') || 'ThaleSmart_E4B1F0';
+    if (!currentDeviceId || currentDeviceId.startsWith('SmartESP')) {
+      currentDeviceId = 'ThaleSmart_E4B1F0';
+      localStorage.setItem('esp32_device_id', currentDeviceId);
+    }
     let mqttClient = null;
-    let relayStates = [1, 1, 1, 1];
-    let relayNames = ['Light 1', 'Fan', 'AC / Heater', 'Night Lamp'];
+    let relayStates = [0, 0, 0, 0];
+    let relayNames = ['Relay 1', 'Relay 2', 'Relay 3', 'Relay 4'];
     let schedules = [
       { channel: 1, action: 1, hour: 6, min: 30, days: 127, enabled: true },
       { channel: 1, action: 0, hour: 23, min: 0, days: 127, enabled: true }
@@ -441,26 +456,42 @@
       syncSchedulesToESP32();
     }
 
-    // MQTT Logic (Automatic SSL detection for HTTPS / GitHub Pages)
+    // MQTT Logic (Automatic SSL detection and fallback for HTTPS / GitHub Pages / local file)
     function connectMQTT() {
       currentDeviceId = document.getElementById('deviceIdInput').value.trim() || currentDeviceId;
       localStorage.setItem('esp32_device_id', currentDeviceId);
 
-      const isHttps = (window.location.protocol === 'https:');
       const brokerHost = document.getElementById('mqttBroker').value.trim() || 'broker.hivemq.com';
-      const brokerPort = isHttps ? 8884 : 8000;
-      const clientId = 'WebClient_' + Math.floor(Math.random() * 1000000);
+      const clientId = 'ThaleSmart_Web_' + Math.floor(Math.random() * 1000000);
 
       document.getElementById('connectionBadge').className = 'badge offline';
       document.getElementById('statusText').innerText = 'Connecting...';
+
+      // Always try secure WSS port 8884 first
+      _tryConnectWithPort(brokerHost, 8884, true, clientId, () => {
+        // If 8884 fails on local file or HTTP, try WS port 8000
+        if (window.location.protocol !== 'https:') {
+          console.warn('WSS 8884 failed, attempting WS port 8000 fallback...');
+          _tryConnectWithPort(brokerHost, 8000, false, clientId + '_ws');
+        } else {
+          document.getElementById('connectionBadge').className = 'badge offline';
+          document.getElementById('statusText').innerText = 'Retry...';
+          setTimeout(connectMQTT, 5000);
+        }
+      });
+    }
+
+    function _tryConnectWithPort(brokerHost, brokerPort, useSSL, clientId, onFailCallback) {
+      if (mqttClient) {
+        try { mqttClient.disconnect(); } catch(e) {}
+      }
 
       mqttClient = new Paho.MQTT.Client(brokerHost, brokerPort, clientId);
 
       mqttClient.onConnectionLost = (resp) => {
         document.getElementById('connectionBadge').className = 'badge offline';
-        document.getElementById('statusText').innerText = 'Offline';
-        // Auto-reconnect after 3 seconds
-        setTimeout(connectMQTT, 3000);
+        document.getElementById('statusText').innerText = 'Offline (Tap)';
+        setTimeout(connectMQTT, 5000);
       };
 
       mqttClient.onMessageArrived = (msg) => {
@@ -475,6 +506,8 @@
         else if (topic.endsWith('/state')) {
           try {
             const data = JSON.parse(payload);
+            document.getElementById('connectionBadge').className = 'badge online';
+            document.getElementById('statusText').innerText = 'Online';
             if (data.relays) {
               relayStates = data.relays;
               renderRelays();
@@ -506,8 +539,8 @@
       };
 
       mqttClient.connect({
-        useSSL: isHttps,
-        timeout: 10,
+        useSSL: useSSL,
+        timeout: 5,
         keepAliveInterval: 30,
         cleanSession: true,
         onSuccess: () => {
@@ -518,9 +551,14 @@
           mqttClient.subscribe(`home/${currentDeviceId}/ir/status`);
         },
         onFailure: (err) => {
-          document.getElementById('connectionBadge').className = 'badge offline';
-          document.getElementById('statusText').innerText = 'Retry...';
-          setTimeout(connectMQTT, 4000);
+          console.warn(`MQTT connection failed on port ${brokerPort}:`, err);
+          if (onFailCallback) {
+            onFailCallback();
+          } else {
+            document.getElementById('connectionBadge').className = 'badge offline';
+            document.getElementById('statusText').innerText = 'Retry...';
+            setTimeout(connectMQTT, 5000);
+          }
         }
       });
     }
@@ -592,6 +630,7 @@
     }
 
     // Initialize UI & Connect
+    document.getElementById('deviceIdInput').value = currentDeviceId;
     renderRoomTabs();
     renderRelays();
     renderIrGrid();

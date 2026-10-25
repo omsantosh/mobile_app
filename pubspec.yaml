@@ -1,7 +1,7 @@
 name: smart_home_esp32
 description: "Unified Smart Home Control App with BLE Provisioning, Cloud MQTT, 4/8-ch Relays, Scenes & Schedules"
 publish_to: 'none'
-version: 1.0.2+3
+version: 1.0.7+8
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -12,7 +12,8 @@ dependencies:
   flutter_blue_plus: ^1.31.14 # High reliability BLE library for Android & iOS
   mqtt_client: ^10.2.0        # Robust MQTT 3.1.1 / 5.0 client
   provider: ^6.1.1            # State management
-  shared_preferences: ^2.2.2  # Local device & broker config cache
+  shared_preferences: ^2.5.3  # Local device & broker config cache
+  shared_preferences_android: ^2.5.3
   permission_handler: ^11.3.0 # BLE / Location permissions on Android 12+
   flutter_staggered_animations: ^1.1.1
   google_fonts: ^6.1.0

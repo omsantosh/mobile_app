@@ -215,7 +215,7 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
                     mqtt.syncSchedules(_schedules);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Schedules synced to ESP32 Flash (Saved locally)!'),
+                        content: Text('Schedules synced to ThaleSmart (Saved locally)!'),
                         backgroundColor: Colors.teal,
                       ),
                     );

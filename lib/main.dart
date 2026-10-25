@@ -81,18 +81,21 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   Future<void> _autoConnectIfSaved() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedDevice = prefs.getString('device_id') ?? 'ThaleSmart_E4B1F0';
+      final savedDevice = prefs.getString('device_id');
+      final activeId = (savedDevice == null || savedDevice.isEmpty || savedDevice.startsWith('SmartESP'))
+          ? 'ThaleSmart_E4B1F0'
+          : savedDevice;
       final savedBroker = prefs.getString('mqtt_broker') ?? 'broker.hivemq.com';
-      await prefs.setString('device_id', savedDevice);
+      await prefs.setString('device_id', activeId);
       await prefs.setString('mqtt_broker', savedBroker);
       if (mounted) {
         final mqtt = Provider.of<MqttService>(context, listen: false);
-        if (!mqtt.isConnected) {
-          final clientId = 'App_${DateTime.now().millisecondsSinceEpoch}';
+        if (!mqtt.isConnected && !mqtt.isConnecting) {
+          final clientId = 'ThaleSmart_${DateTime.now().millisecondsSinceEpoch}';
           await mqtt.connect(
             broker: savedBroker.trim(),
             clientId: clientId,
-            deviceId: savedDevice.trim(),
+            deviceId: activeId.trim(),
           );
         }
       }

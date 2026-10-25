@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -39,8 +40,11 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString('device_id');
     final savedBroker = prefs.getString('mqtt_broker') ?? 'broker.hivemq.com';
+    final activeId = (saved != null && saved.isNotEmpty && !saved.startsWith('SmartESP'))
+        ? saved
+        : 'ThaleSmart_E4B1F0';
     setState(() {
-      _deviceIdController.text = (saved != null && saved.isNotEmpty) ? saved : 'ThaleSmart_E4B1F0';
+      _deviceIdController.text = activeId;
       _quickBrokerController.text = savedBroker;
     });
   }
@@ -49,6 +53,19 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('device_id', id);
     await prefs.setString('mqtt_broker', broker);
+
+    final roomsJson = prefs.getString('saved_rooms');
+    if (roomsJson != null) {
+      try {
+        final List<dynamic> decoded = jsonDecode(roomsJson);
+        for (var r in decoded) {
+          if (r is Map) {
+            r['deviceId'] = id;
+          }
+        }
+        await prefs.setString('saved_rooms', jsonEncode(decoded));
+      } catch (_) {}
+    }
   }
 
   @override
@@ -200,7 +217,7 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      onPressed: (_isQuickConnecting || mqtt.isConnecting)
+                      onPressed: _isQuickConnecting
                           ? null
                           : () async {
                               final deviceId = _deviceIdController.text.trim();
@@ -212,43 +229,58 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
                                 return;
                               }
                               setState(() => _isQuickConnecting = true);
-                              await _saveDeviceId(deviceId, broker);
-                              final clientId = 'App_${DateTime.now().millisecondsSinceEpoch}';
-                              final ok = await mqtt.connect(
-                                broker: broker,
-                                clientId: clientId,
-                                deviceId: deviceId,
-                              );
-                              setState(() => _isQuickConnecting = false);
-                              if (ok) {
+                              try {
+                                await _saveDeviceId(deviceId, broker);
+                                final clientId = 'ThaleSmart_${DateTime.now().millisecondsSinceEpoch}';
+                                final ok = await mqtt.connect(
+                                  broker: broker,
+                                  clientId: clientId,
+                                  deviceId: deviceId,
+                                );
+                                if (ok) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Connected to $deviceId! Switching to Dashboard...'),
+                                      backgroundColor: Colors.teal,
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                  await Future.delayed(const Duration(milliseconds: 400));
+                                  if (widget.onNavigateToDashboard != null && mounted) {
+                                    widget.onNavigateToDashboard!();
+                                  }
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Could not reach MQTT broker. Please check phone internet.'),
+                                      backgroundColor: Colors.red,
+                                      duration: Duration(seconds: 4),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                debugPrint('Quick connect error: $e');
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Connected to $deviceId! Switching to Dashboard...'),
-                                    backgroundColor: Colors.teal,
-                                    duration: const Duration(seconds: 2),
-                                  ),
-                                );
-                                await Future.delayed(const Duration(milliseconds: 600));
-                                if (widget.onNavigateToDashboard != null && mounted) {
-                                  widget.onNavigateToDashboard!();
-                                }
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Connection failed. Please check internet connection.'),
+                                    content: Text('Error: $e'),
                                     backgroundColor: Colors.red,
+                                    duration: const Duration(seconds: 4),
                                   ),
                                 );
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _isQuickConnecting = false);
+                                }
                               }
                             },
-                      icon: (_isQuickConnecting || mqtt.isConnecting)
+                      icon: _isQuickConnecting
                           ? const SizedBox(
                               width: 18,
                               height: 18,
                               child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                             )
                           : const Icon(Icons.cloud_upload_outlined),
-                      label: Text((_isQuickConnecting || mqtt.isConnecting) ? 'Connecting...' : 'Connect to My ESP32'),
+                      label: Text(_isQuickConnecting ? 'Connecting...' : 'Connect to ThaleSmart'),
                     ),
                   ),
                 ],
@@ -261,11 +293,11 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
             // SECTION 2: BLE PROVISIONING (New boards)
             // ─────────────────────────────────────────
             const Text(
-              'Add a New ESP32 Board via Bluetooth',
+              'Add a New ThaleSmart Board via Bluetooth',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const Text(
-              'For first-time setup. Hold BOOT button on ESP32 to enable BLE mode.',
+              'For first-time setup. Hold BOOT button on ThaleSmart board to enable BLE mode.',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 12),
@@ -277,7 +309,7 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
                 child: ListTile(
                   leading: const Icon(Icons.bluetooth_connected, color: Colors.teal),
                   title: Text(
-                    'Paired to ${ble.connectedDevice?.platformName ?? "ESP32"}',
+                    'Paired to ${ble.connectedDevice?.platformName ?? "ThaleSmart"}',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text('Status: ${ble.provisioningStatus}'),
@@ -402,14 +434,14 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
                     if (success) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Wi-Fi credentials sent! ESP32 is connecting...'),
+                          content: Text('Wi-Fi credentials sent! ThaleSmart is connecting...'),
                           backgroundColor: Colors.green,
                         ),
                       );
                     }
                   },
                   icon: const Icon(Icons.send_rounded),
-                  label: const Text('Send Wi-Fi to ESP32 via Bluetooth'),
+                  label: const Text('Send Wi-Fi to ThaleSmart via Bluetooth'),
                 ),
               ),
             ],

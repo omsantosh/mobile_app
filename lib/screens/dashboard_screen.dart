@@ -26,8 +26,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadRooms() async {
     final prefs = await SharedPreferences.getInstance();
+    String? savedDevice = prefs.getString('device_id');
+    if (savedDevice == null || savedDevice.isEmpty || savedDevice.startsWith('SmartESP')) {
+      savedDevice = 'ThaleSmart_E4B1F0';
+      await prefs.setString('device_id', savedDevice);
+    }
+    final activeId = savedDevice;
     final roomsJson = prefs.getString('saved_rooms');
-    final activeId = prefs.getString('device_id') ?? 'ThaleSmart_E4B1F0';
 
     if (roomsJson != null) {
       try {
@@ -36,7 +41,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _rooms = decoded
               .map((r) => {
                     'name': (r['name'] ?? 'Room').toString(),
-                    'deviceId': (r['deviceId'] ?? '').toString(),
+                    'deviceId': ((r['deviceId'] == null || r['deviceId'].toString().startsWith('SmartESP'))
+                        ? activeId
+                        : r['deviceId']).toString(),
                   })
               .toList();
         });
@@ -48,11 +55,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_rooms.isEmpty) {
       _rooms = [{'name': 'Living Room', 'deviceId': activeId}];
     }
+    await prefs.setString('saved_rooms', jsonEncode(_rooms));
 
     // Set selected index matching active device ID
     final idx = _rooms.indexWhere((r) => r['deviceId'] == activeId);
     if (idx != -1) {
       setState(() => _selectedRoomIndex = idx);
+    }
+
+    if (mounted) {
+      final mqtt = Provider.of<MqttService>(context, listen: false);
+      if (!mqtt.isConnected && !mqtt.isConnecting) {
+        final broker = prefs.getString('mqtt_broker') ?? 'broker.hivemq.com';
+        final clientId = 'ThaleSmart_${DateTime.now().millisecondsSinceEpoch}';
+        mqtt.connect(
+          broker: broker,
+          clientId: clientId,
+          deviceId: activeId,
+        );
+      }
     }
   }
 
@@ -83,7 +104,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _showAddRoomDialog() {
     final nameCtrl = TextEditingController(text: 'Bedroom 1');
-    final idCtrl = TextEditingController(text: 'SmartESP32_');
+    final idCtrl = TextEditingController(text: 'ThaleSmart_');
 
     showDialog(
       context: context,
@@ -93,7 +114,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Add another ESP32 board and assign it to a room in your house.',
+              'Add another ThaleSmart board and assign it to a room in your house.',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 14),
@@ -111,7 +132,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               controller: idCtrl,
               decoration: const InputDecoration(
                 labelText: 'Device ID',
-                hintText: 'e.g. SmartESP32_A1B2C3',
+                hintText: 'e.g. ThaleSmart_E4B1F0',
                 prefixIcon: Icon(Icons.developer_board),
                 border: OutlineInputBorder(),
               ),
@@ -345,28 +366,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.circle,
-                  size: 12,
-                  color: isDeviceOnline
-                      ? Colors.greenAccent
-                      : (isCloudConnected ? Colors.tealAccent : Colors.redAccent),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () {
+                final mqtt = Provider.of<MqttService>(context, listen: false);
+                if (!mqtt.isConnected) {
+                  _switchRoom(_selectedRoomIndex);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Reconnecting to ThaleSmart...'), duration: Duration(seconds: 2)),
+                  );
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.circle,
+                      size: 12,
+                      color: isDeviceOnline
+                          ? Colors.greenAccent
+                          : (isCloudConnected ? Colors.tealAccent : Colors.redAccent),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isDeviceOnline
+                          ? 'Online'
+                          : (isCloudConnected ? 'Connected' : 'Offline (Tap)'),
+                      style: TextStyle(
+                        color: isDeviceOnline
+                            ? Colors.greenAccent
+                            : (isCloudConnected ? Colors.tealAccent : Colors.redAccent),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  isDeviceOnline
-                      ? 'Online'
-                      : (isCloudConnected ? 'Connected' : 'Offline'),
-                  style: TextStyle(
-                    color: isDeviceOnline
-                        ? Colors.greenAccent
-                        : (isCloudConnected ? Colors.tealAccent : Colors.redAccent),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],

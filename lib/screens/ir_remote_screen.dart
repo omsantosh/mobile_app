@@ -107,7 +107,7 @@ class _IrRemoteScreenState extends State<IrRemoteScreen> {
                         ),
                         SizedBox(height: 4),
                         Text(
-                          'Point your TV, AC, or Set-top Box remote at the ESP32 receiver. Tap "Learn", then press any button on your remote.',
+                          'Point your TV, AC, or Set-top Box remote at the ThaleSmart receiver. Tap "Learn", then press any button on your remote.',
                           style: TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                       ],
