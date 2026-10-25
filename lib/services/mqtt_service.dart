@@ -8,12 +8,14 @@ import '../models/device_state.dart';
 class MqttService extends ChangeNotifier {
   MqttServerClient? _client;
   bool _isConnected = false;
+  bool _isConnecting = false;
   String _activeDeviceId = '';
   DeviceState? _currentState;
   StreamSubscription? _subscription;
   Map<String, dynamic>? _lastIrEvent;
 
   bool get isConnected => _isConnected;
+  bool get isConnecting => _isConnecting;
   String get activeDeviceId => _activeDeviceId;
   DeviceState? get currentState => _currentState;
   Map<String, dynamic>? get lastIrEvent => _lastIrEvent;
@@ -26,33 +28,58 @@ class MqttService extends ChangeNotifier {
     String? password,
     required String deviceId,
   }) async {
-    _activeDeviceId = deviceId;
-
-    // Step 1: Try standard TCP (port 1883)
-    debugPrint('Connecting to MQTT broker $broker:$port via TCP...');
-    bool ok = await _tryConnect(
-      broker: broker,
-      port: port,
-      clientId: clientId,
-      username: username,
-      password: password,
-      useWebSocket: false,
-    );
-
-    // Step 2: If TCP fails (e.g. mobile carrier blocks port 1883), fallback to WebSocket (port 8000)
-    if (!ok && (broker.contains('hivemq') || port == 1883)) {
-      debugPrint('TCP connection failed. Falling back to WebSocket on port 8000...');
-      ok = await _tryConnect(
-        broker: broker,
-        port: 8000,
-        clientId: '${clientId}_ws',
-        username: username,
-        password: password,
-        useWebSocket: true,
-      );
+    if (_isConnecting) {
+      debugPrint('MQTT connection attempt already in progress, skipping duplicate.');
+      return _isConnected;
     }
 
-    return ok;
+    _isConnecting = true;
+    _activeDeviceId = deviceId;
+    notifyListeners();
+
+    try {
+      // Step 1: Try standard TCP (port 1883) with 4-second timeout
+      debugPrint('Connecting to MQTT broker $broker:$port via TCP...');
+      bool ok = await _tryConnect(
+        broker: broker,
+        port: port,
+        clientId: clientId,
+        username: username,
+        password: password,
+        useWebSocket: false,
+      );
+
+      // Step 2: Fallback to WebSocket port 8000 if TCP blocked by network/carrier
+      if (!ok) {
+        debugPrint('TCP port $port failed. Falling back to WebSocket on port 8000...');
+        ok = await _tryConnect(
+          broker: broker,
+          port: 8000,
+          clientId: '${clientId}_ws',
+          username: username,
+          password: password,
+          useWebSocket: true,
+        );
+      }
+
+      // Step 3: Fallback to Secure WebSocket port 8884 (TLS/SSL)
+      if (!ok) {
+        debugPrint('WebSocket port 8000 failed. Falling back to Secure WebSocket on port 8884...');
+        ok = await _tryConnect(
+          broker: broker,
+          port: 8884,
+          clientId: '${clientId}_wss',
+          username: username,
+          password: password,
+          useWebSocket: true,
+        );
+      }
+
+      return ok;
+    } finally {
+      _isConnecting = false;
+      notifyListeners();
+    }
   }
 
   Future<bool> _tryConnect({
@@ -67,12 +94,31 @@ class MqttService extends ChangeNotifier {
       _subscription?.cancel();
       _subscription = null;
 
-      _client?.disconnect();
-      _client = MqttServerClient(broker, clientId);
+      try {
+        _client?.disconnect();
+      } catch (_) {}
+
+      String brokerUri = broker;
+      if (useWebSocket) {
+        // Strip any existing protocol
+        final host = broker
+            .replaceAll('ws://', '')
+            .replaceAll('wss://', '')
+            .replaceAll('/mqtt', '')
+            .replaceAll('http://', '')
+            .replaceAll('https://', '');
+        if (port == 8884) {
+          brokerUri = 'wss://$host/mqtt';
+        } else {
+          brokerUri = 'ws://$host/mqtt';
+        }
+      }
+
+      _client = MqttServerClient(brokerUri, clientId);
       _client!.port = port;
       _client!.logging(on: false);
       _client!.keepAlivePeriod = 30;
-      _client!.connectTimeoutPeriod = 8000;
+      _client!.connectTimeoutPeriod = 4000;
       _client!.autoReconnect = true;
 
       if (useWebSocket) {
@@ -94,15 +140,15 @@ class MqttService extends ChangeNotifier {
       _client!.connectionMessage = connMessage;
 
       final status = await _client!.connect().timeout(
-        const Duration(seconds: 9),
+        const Duration(seconds: 5),
         onTimeout: () {
-          debugPrint('Connection to $broker:$port timed out.');
+          debugPrint('Connection to $brokerUri:$port timed out.');
           return null;
         },
       );
 
       if (status != null && status.state == MqttConnectionState.connected) {
-        debugPrint('Successfully connected to MQTT broker ($broker:$port, ws: $useWebSocket)');
+        debugPrint('Successfully connected to MQTT broker ($brokerUri:$port, ws: $useWebSocket)');
         _isConnected = true;
         _setupSubscriptions();
         notifyListeners();

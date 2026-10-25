@@ -61,11 +61,13 @@ class MainNavigationShell extends StatefulWidget {
 class _MainNavigationShellState extends State<MainNavigationShell> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    DashboardScreen(),
-    ScenesScreen(),
-    SchedulesScreen(),
-    BleProvisionScreen(),
+  late final List<Widget> _screens = [
+    const DashboardScreen(),
+    const ScenesScreen(),
+    const SchedulesScreen(),
+    BleProvisionScreen(
+      onNavigateToDashboard: () => setState(() => _currentIndex = 0),
+    ),
   ];
 
   @override
@@ -79,9 +81,11 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   Future<void> _autoConnectIfSaved() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedDevice = prefs.getString('device_id');
+      final savedDevice = prefs.getString('device_id') ?? 'ThaleSmart_E4B1F0';
       final savedBroker = prefs.getString('mqtt_broker') ?? 'broker.hivemq.com';
-      if (savedDevice != null && savedDevice.trim().isNotEmpty && mounted) {
+      await prefs.setString('device_id', savedDevice);
+      await prefs.setString('mqtt_broker', savedBroker);
+      if (mounted) {
         final mqtt = Provider.of<MqttService>(context, listen: false);
         if (!mqtt.isConnected) {
           final clientId = 'App_${DateTime.now().millisecondsSinceEpoch}';

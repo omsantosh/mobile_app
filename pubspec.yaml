@@ -1,7 +1,7 @@
 name: smart_home_esp32
 description: "Unified Smart Home Control App with BLE Provisioning, Cloud MQTT, 4/8-ch Relays, Scenes & Schedules"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.2+3
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

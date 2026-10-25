@@ -5,7 +5,8 @@ import '../services/ble_service.dart';
 import '../services/mqtt_service.dart';
 
 class BleProvisionScreen extends StatefulWidget {
-  const BleProvisionScreen({Key? key}) : super(key: key);
+  final VoidCallback? onNavigateToDashboard;
+  const BleProvisionScreen({Key? key, this.onNavigateToDashboard}) : super(key: key);
 
   @override
   State<BleProvisionScreen> createState() => _BleProvisionScreenState();
@@ -21,7 +22,7 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
   final _mqttPassController = TextEditingController();
 
   // Quick Connect controllers (for already-provisioned boards)
-  final _deviceIdController = TextEditingController();
+  final _deviceIdController = TextEditingController(text: 'ThaleSmart_E4B1F0');
   final _quickBrokerController = TextEditingController(text: 'broker.hivemq.com');
 
   bool _obscureWifiPass = true;
@@ -36,10 +37,10 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
 
   Future<void> _loadSavedDeviceId() async {
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString('device_id') ?? '';
+    final saved = prefs.getString('device_id');
     final savedBroker = prefs.getString('mqtt_broker') ?? 'broker.hivemq.com';
     setState(() {
-      _deviceIdController.text = saved;
+      _deviceIdController.text = (saved != null && saved.isNotEmpty) ? saved : 'ThaleSmart_E4B1F0';
       _quickBrokerController.text = savedBroker;
     });
   }
@@ -144,22 +145,47 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
                   // Connection Status Row
                   if (mqtt.isConnected)
                     Container(
-                      padding: const EdgeInsets.all(10),
-                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 14),
                       decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.green.shade300),
+                        color: Colors.green.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.green, width: 1.5),
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const Icon(Icons.check_circle, color: Colors.green, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Connected to ${mqtt.activeDeviceId}',
-                              style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                          Row(
+                            children: [
+                              const Icon(Icons.check_circle, color: Colors.green, size: 22),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Connected to ${mqtt.activeDeviceId}!',
+                                  style: const TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
+                            onPressed: () {
+                              if (widget.onNavigateToDashboard != null) {
+                                widget.onNavigateToDashboard!();
+                              }
+                            },
+                            icon: const Icon(Icons.dashboard, size: 18),
+                            label: const Text('Open Dashboard to Control Relays ➔', style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
@@ -174,7 +200,7 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      onPressed: _isQuickConnecting
+                      onPressed: (_isQuickConnecting || mqtt.isConnecting)
                           ? null
                           : () async {
                               final deviceId = _deviceIdController.text.trim();
@@ -197,11 +223,15 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
                               if (ok) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Connected to $deviceId! Switch to Dashboard tab to control.'),
+                                    content: Text('Connected to $deviceId! Switching to Dashboard...'),
                                     backgroundColor: Colors.teal,
-                                    duration: const Duration(seconds: 4),
+                                    duration: const Duration(seconds: 2),
                                   ),
                                 );
+                                await Future.delayed(const Duration(milliseconds: 600));
+                                if (widget.onNavigateToDashboard != null && mounted) {
+                                  widget.onNavigateToDashboard!();
+                                }
                               } else {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
@@ -211,14 +241,14 @@ class _BleProvisionScreenState extends State<BleProvisionScreen> {
                                 );
                               }
                             },
-                      icon: _isQuickConnecting
+                      icon: (_isQuickConnecting || mqtt.isConnecting)
                           ? const SizedBox(
                               width: 18,
                               height: 18,
                               child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                             )
                           : const Icon(Icons.cloud_upload_outlined),
-                      label: Text(_isQuickConnecting ? 'Connecting...' : 'Connect to My ESP32'),
+                      label: Text((_isQuickConnecting || mqtt.isConnecting) ? 'Connecting...' : 'Connect to My ESP32'),
                     ),
                   ),
                 ],
