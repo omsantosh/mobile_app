@@ -10,6 +10,9 @@ on:
       - 'pubspec.yaml'
       - '.github/workflows/build_ios.yml'
 
+permissions:
+  contents: write
+
 jobs:
   build-ios:
     name: Compile & Package iOS IPA
@@ -47,9 +50,21 @@ jobs:
           echo "IPA Size:"
           ls -lh ThaleSmart.ipa
 
-      - name: Upload ThaleSmart IPA to GitHub
+      - name: Upload ThaleSmart IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ThaleSmart-iOS-IPA
           path: ThaleSmart.ipa
           retention-days: 30
+
+      - name: Publish to Public GitHub Releases (No Login Required to Download)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-latest
+          name: "ThaleSmart iOS App (IPA)"
+          body: "Direct download of unsigned ThaleSmart.ipa for iPhone. Compatible with Sideloadly / AltStore / TestFlight."
+          files: ThaleSmart.ipa
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
